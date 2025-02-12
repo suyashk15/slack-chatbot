@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import List, Dict
 import json
+import requests
+from fastapi.responses import RedirectResponse
 
 load_dotenv()
 
@@ -40,6 +42,11 @@ app = FastAPI(lifespan=lifespan)
 # Initialize clients
 slack_client = AsyncWebClient(token=os.environ["SLACK_BOT_TOKEN"])
 signature_verifier = SignatureVerifier(os.environ["SLACK_SIGNING_SECRET"])
+
+SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
+SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
+SLACK_OAUTH_REDIRECT_URI = os.getenv("SLACK_OAUTH_REDIRECT_URI")
+
 try:
     openai_client = AsyncOpenAI(
         api_key=os.environ.get("OPENAI_API_KEY"),
@@ -148,6 +155,28 @@ async def slack_events(request: Request):
             )
 
     return {"ok": True}
+
+# Exchange the code for an access token
+@app.get("/slack/oauth/callback")
+async def oauth_callback(code: str):
+    response = requests.post(
+        "https://slack.com/api/oauth.v2.access",
+        data={
+            "client_id": SLACK_CLIENT_ID,
+            "client_secret": SLACK_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": SLACK_OAUTH_REDIRECT_URI
+        }
+    )
+    data = response.json()
+
+    if response.status_code != 200 or not data.get("ok"):
+        return {"error": "Failed to complete OAuth process."}
+
+    # Save the OAuth token for future use
+    access_token = data.get("access_token")
+
+    return RedirectResponse(url="https://slack.com/app_redirect")
 
 if __name__ == "__main__":
     import uvicorn
