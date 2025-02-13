@@ -48,6 +48,7 @@ signature_verifier = SignatureVerifier(os.environ["SLACK_SIGNING_SECRET"])
 SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "placeholder-client-id")
 SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET", "placeholder-client-secret")
 SLACK_OAUTH_REDIRECT_URI = os.getenv("SLACK_OAUTH_REDIRECT_URI", "http://localhost:8000/slack/oauth/callback")
+SLACK_APP_ID = os.getenv("SLACK_APP_ID", "placeholder-app-id")
 
 try:
     openai_client = AsyncOpenAI(
@@ -162,26 +163,19 @@ async def slack_events(request: Request):
 @app.get("/slack/install")
 async def slack_install():
     """
-    Direct install URL endpoint that redirects to Slack's OAuth authorization
+    Direct install URL endpoint that redirects to Slack's OAuth authorization.
     """
-    # Prepare OAuth parameters
     params = {
         "client_id": SLACK_CLIENT_ID,
-        "scope": "app_mentions:read,chat:write,,channels:history",
+        "scope": "app_mentions:read,chat:write,channels:history,join,groups:read,im:read,mpim:read",
+        "user_scope": "chat:write",
         "redirect_uri": SLACK_OAUTH_REDIRECT_URI
     }
 
-    # Construct Slack OAuth URL
     auth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
-
-    # Return 302 redirect to Slack's OAuth URL
-    return RedirectResponse(
-        url=auth_url,
-        status_code=302
-    )
+    return RedirectResponse(url=auth_url, status_code=302)
 
 
-# Exchange the code for an access token
 @app.get("/slack/oauth/callback")
 async def slack_oauth_callback(code: str):
     """
@@ -204,11 +198,7 @@ async def slack_oauth_callback(code: str):
     if not data.get("ok"):
         return {"error": "OAuth failed", "details": data}
 
-    access_token = data["access_token"]
-    team_id = data["team"]["id"]
-
-    # You may want to store the access_token in a database for later use
-    return RedirectResponse(url="https://slack.com/app_redirect?team=" + team_id)
+    return RedirectResponse(url=f"https://slack.com/app_redirect?app={SLACK_APP_ID}")
 
 if __name__ == "__main__":
     import uvicorn
