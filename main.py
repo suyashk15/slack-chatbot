@@ -43,9 +43,9 @@ app = FastAPI(lifespan=lifespan)
 slack_client = AsyncWebClient(token=os.environ["SLACK_BOT_TOKEN"])
 signature_verifier = SignatureVerifier(os.environ["SLACK_SIGNING_SECRET"])
 
-SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID")
-SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET")
-SLACK_OAUTH_REDIRECT_URI = os.getenv("SLACK_OAUTH_REDIRECT_URI")
+SLACK_CLIENT_ID = os.getenv("SLACK_CLIENT_ID", "placeholder-client-id")
+SLACK_CLIENT_SECRET = os.getenv("SLACK_CLIENT_SECRET", "placeholder-client-secret")
+SLACK_OAUTH_REDIRECT_URI = os.getenv("SLACK_OAUTH_REDIRECT_URI", "http://localhost:8000/slack/oauth/callback")
 
 try:
     openai_client = AsyncOpenAI(
