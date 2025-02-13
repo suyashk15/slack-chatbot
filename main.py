@@ -92,6 +92,8 @@ async def slack_events(request: Request):
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
+    print(f"Received event with timestamp: {timestamp}")
+
     if not signature_verifier.is_valid(
         body=body,
         timestamp=timestamp,
@@ -100,6 +102,8 @@ async def slack_events(request: Request):
         raise HTTPException(status_code=400, detail="Invalid request signature")
 
     event_data = json.loads(body)
+
+    print(f"Event data: {event_data}")
 
     if event_data.get("type") == "url_verification":
         return {"challenge": event_data["challenge"]}
@@ -110,6 +114,8 @@ async def slack_events(request: Request):
         user_id = event["user"]
         text = event["text"]
         thread_ts = event.get("thread_ts", event["ts"])
+
+        print(f"Processing mention in channel: {channel_id}") 
 
         await store_message(channel_id, user_id, text)
         previous_messages = await get_conversation_history(channel_id)
