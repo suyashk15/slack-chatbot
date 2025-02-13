@@ -152,6 +152,9 @@ async def get_conversation_history(channel_id: str) -> List[Dict]:
         logger.error(f"Error fetching conversation history: {e}", exc_info=True)
         raise
 
+# Temporary in-memory store for processed event timestamps
+processed_events = set()
+
 @app.post("/")
 async def slack_events(request: Request):
     body = await request.body()
@@ -178,6 +181,15 @@ async def slack_events(request: Request):
             return {"challenge": event_data["challenge"]}
 
         event = event_data.get("event", {})
+        event_ts = event.get("ts")
+
+        # Ensure the event is processed only once
+        if event_ts and event_ts in processed_events:
+            logger.info(f"Skipping duplicate event: {event_ts}")
+            return {"ok": True}
+
+        processed_events.add(event_ts)
+
         if event.get("type") == "app_mention":
             channel_id = event["channel"]
             user_id = event["user"]
@@ -192,29 +204,6 @@ async def slack_events(request: Request):
 
             try:
                 slack_client = await get_slack_client(workspace_id)
-
-                # Check if the bot is in the channel
-                try:
-                    logger.debug(f"Checking channel info for {channel_id}")
-                    channel_info = await slack_client.conversations_info(channel=channel_id)
-                    logger.debug(f"Channel info retrieved: {channel_info}")
-                except SlackApiError as e:
-                    logger.warning(f"Error getting channel info: {e}")
-                    if e.response["error"] == "channel_not_found":
-                        logger.info(f"Attempting to join channel {channel_id}")
-                        try:
-                            join_response = await slack_client.conversations_join(channel=channel_id)
-                            if not join_response.get("ok"):
-                                logger.error(f"Failed to join channel: {join_response.get('error')}")
-                                raise Exception(f"Failed to join channel: {join_response.get('error')}")
-                            logger.info(f"Successfully joined channel: {channel_id}")
-                        except SlackApiError as join_error:
-                            logger.error(f"Error joining channel: {join_error}")
-                            await slack_client.chat_postMessage(
-                                channel=user_id,
-                                text=f"Sorry, I couldn't join the channel <#{channel_id}>. Please add me to the channel and try again."
-                            )
-                            return {"ok": True}
 
                 # Format conversation history for the LLM
                 conversation_history = "\n".join([
@@ -240,20 +229,13 @@ async def slack_events(request: Request):
                 logger.debug("OpenAI API response received")
 
                 # Send response back to Slack
-                try:
-                    logger.info(f"Sending response to channel {channel_id}")
-                    await slack_client.chat_postMessage(
-                        channel=channel_id,
-                        text=response.choices[0].message.content,
-                        thread_ts=thread_ts
-                    )
-                    logger.info(f"Response sent successfully to channel: {channel_id}")
-                except SlackApiError as e:
-                    logger.error(f"Error posting message to Slack: {e}")
-                    await slack_client.chat_postMessage(
-                        channel=user_id,
-                        text="Sorry, I encountered an error posting your message."
-                    )
+                logger.info(f"Sending response to channel {channel_id}")
+                await slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text=response.choices[0].message.content,
+                    thread_ts=thread_ts
+                )
+                logger.info(f"Response sent successfully to channel: {channel_id}")
 
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)
