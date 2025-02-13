@@ -92,6 +92,9 @@ async def slack_events(request: Request):
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
+    # Debug logging
+    print(f"Received event with timestamp: {timestamp}")
+
     if not signature_verifier.is_valid(
         body=body,
         timestamp=timestamp,
@@ -101,6 +104,7 @@ async def slack_events(request: Request):
 
     # Parse the event data
     event_data = json.loads(body)
+    print(f"Event data: {event_data}")  # Debug log
 
     # Handle Slack URL verification
     if event_data.get("type") == "url_verification":
@@ -114,18 +118,36 @@ async def slack_events(request: Request):
         text = event["text"]
         thread_ts = event.get("thread_ts", event["ts"])
 
+        print(f"Processing mention in channel: {channel_id}")  # Debug log
+
         # Store the current message
         await store_message(channel_id, user_id, text)
 
         # Get conversation history
         previous_messages = await get_conversation_history(channel_id)
 
-        # Format conversation history for the LLM
-        conversation_history = "\n".join([
-            f"User: {msg['message']}" for msg in previous_messages
-        ])
-
         try:
+            # First, check if the bot is in the channel
+            try:
+                # Try to get channel info to verify access
+                channel_info = await slack_client.conversations_info(channel=channel_id)
+                print(f"Channel info: {channel_info}")  # Debug log
+            except Exception as e:
+                print(f"Error getting channel info: {e}")
+                # Try to join the channel
+                try:
+                    await slack_client.conversations_join(channel=channel_id)
+                    print(f"Joined channel: {channel_id}")
+                except Exception as join_error:
+                    print(f"Error joining channel: {join_error}")
+                    raise
+
+            # Format conversation history for the LLM
+            conversation_history = "\n".join([
+                f"User: {msg['message']}" for msg in previous_messages
+            ])
+
+            # Call OpenAI
             response = await openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[
@@ -135,27 +157,35 @@ async def slack_events(request: Request):
                     },
                     {
                         "role": "user",
-                        "content":  f"""Previous conversation:{conversation_history}
-                                        Current message: {text}
-                                        Please provide a helpful response:"""
+                        "content": f"""Previous conversation:{conversation_history}
+                                    Current message: {text}
+                                    Please provide a helpful response:"""
                     }
                 ]
             )
 
             # Send response back to Slack
-            await slack_client.chat_postMessage(
-                channel=channel_id,
-                text=response.choices[0].message.content,
-                thread_ts=thread_ts
-            )
+            try:
+                await slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text=response.choices[0].message.content,
+                    thread_ts=thread_ts
+                )
+                print(f"Successfully sent message to channel: {channel_id}")  # Debug log
+            except Exception as post_error:
+                print(f"Error posting message: {post_error}")
+                raise
 
         except Exception as e:
-            print(f"Error: {e}")
-            await slack_client.chat_postMessage(
-                channel=channel_id,
-                text="Sorry, I encountered an error processing your request.",
-                thread_ts=thread_ts
-            )
+            print(f"Error processing message: {e}")
+            try:
+                await slack_client.chat_postMessage(
+                    channel=channel_id,
+                    text="Sorry, I encountered an error processing your request.",
+                    thread_ts=thread_ts
+                )
+            except Exception as error_msg_error:
+                print(f"Error sending error message: {error_msg_error}")
 
     return {"ok": True}
 
