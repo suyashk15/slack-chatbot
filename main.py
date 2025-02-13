@@ -13,6 +13,7 @@ import json
 import requests
 from fastapi.responses import RedirectResponse
 import httpx
+from urllib.parse import urlencode
 
 load_dotenv()
 
@@ -156,6 +157,29 @@ async def slack_events(request: Request):
             )
 
     return {"ok": True}
+
+
+@app.get("/slack/install")
+async def slack_install():
+    """
+    Direct install URL endpoint that redirects to Slack's OAuth authorization
+    """
+    # Prepare OAuth parameters
+    params = {
+        "client_id": SLACK_CLIENT_ID,
+        "scope": "app_mentions:read,chat:write,,channels:history",
+        "redirect_uri": SLACK_OAUTH_REDIRECT_URI
+    }
+
+    # Construct Slack OAuth URL
+    auth_url = f"https://slack.com/oauth/v2/authorize?{urlencode(params)}"
+
+    # Return 302 redirect to Slack's OAuth URL
+    return RedirectResponse(
+        url=auth_url,
+        status_code=302
+    )
+
 
 # Exchange the code for an access token
 @app.get("/slack/oauth/callback")
