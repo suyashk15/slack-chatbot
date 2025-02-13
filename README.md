@@ -13,7 +13,11 @@ This is a **Slack chatbot** that listens to messages in a channel (when tagged),
 - **Railway** - Deployment  
 ---
 
+## Architecture
+![chatbot-architecture](https://github.com/user-attachments/assets/196735fb-93c8-41b6-91d6-8c85d9e8d41a)
+
 ## Installation Guide 🛠️  
+
 
 ### 1️⃣ Clone the Repository  
 ```bash
