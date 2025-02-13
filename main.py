@@ -92,9 +92,6 @@ async def slack_events(request: Request):
     timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
     signature = request.headers.get("X-Slack-Signature", "")
 
-    # Debug logging
-    print(f"Received event with timestamp: {timestamp}")
-
     if not signature_verifier.is_valid(
         body=body,
         timestamp=timestamp,
@@ -102,15 +99,11 @@ async def slack_events(request: Request):
     ):
         raise HTTPException(status_code=400, detail="Invalid request signature")
 
-    # Parse the event data
     event_data = json.loads(body)
-    print(f"Event data: {event_data}")  # Debug log
 
-    # Handle Slack URL verification
     if event_data.get("type") == "url_verification":
         return {"challenge": event_data["challenge"]}
 
-    # Process the event
     event = event_data.get("event", {})
     if event.get("type") == "app_mention":
         channel_id = event["channel"]
@@ -118,29 +111,29 @@ async def slack_events(request: Request):
         text = event["text"]
         thread_ts = event.get("thread_ts", event["ts"])
 
-        print(f"Processing mention in channel: {channel_id}")  # Debug log
-
-        # Store the current message
         await store_message(channel_id, user_id, text)
-
-        # Get conversation history
         previous_messages = await get_conversation_history(channel_id)
 
         try:
-            # First, check if the bot is in the channel
+            # Check if the bot is in the channel
             try:
-                # Try to get channel info to verify access
                 channel_info = await slack_client.conversations_info(channel=channel_id)
-                print(f"Channel info: {channel_info}")  # Debug log
+                print(f"Channel info: {channel_info}")
             except Exception as e:
                 print(f"Error getting channel info: {e}")
                 # Try to join the channel
                 try:
-                    await slack_client.conversations_join(channel=channel_id)
+                    join_response = await slack_client.conversations_join(channel=channel_id)
+                    if not join_response.get("ok"):
+                        raise Exception(f"Failed to join channel: {join_response.get('error')}")
                     print(f"Joined channel: {channel_id}")
                 except Exception as join_error:
                     print(f"Error joining channel: {join_error}")
-                    raise
+                    await slack_client.chat_postMessage(
+                        channel=user_id,  # Send a DM to the user
+                        text=f"Sorry, I couldn't join the channel <#{channel_id}>. Please add me to the channel and try again."
+                    )
+                    return {"ok": True}
 
             # Format conversation history for the LLM
             conversation_history = "\n".join([
@@ -171,21 +164,20 @@ async def slack_events(request: Request):
                     text=response.choices[0].message.content,
                     thread_ts=thread_ts
                 )
-                print(f"Successfully sent message to channel: {channel_id}")  # Debug log
+                print(f"Successfully sent message to channel: {channel_id}")
             except Exception as post_error:
                 print(f"Error posting message: {post_error}")
-                raise
+                await slack_client.chat_postMessage(
+                    channel=user_id,  # Send a DM to the user
+                    text="Sorry, I encountered an error posting your message."
+                )
 
         except Exception as e:
             print(f"Error processing message: {e}")
-            try:
-                await slack_client.chat_postMessage(
-                    channel=channel_id,
-                    text="Sorry, I encountered an error processing your request.",
-                    thread_ts=thread_ts
-                )
-            except Exception as error_msg_error:
-                print(f"Error sending error message: {error_msg_error}")
+            await slack_client.chat_postMessage(
+                channel=user_id,  # Send a DM to the user
+                text="Sorry, I encountered an error processing your request."
+            )
 
     return {"ok": True}
 
@@ -197,7 +189,7 @@ async def slack_install():
     """
     params = {
         "client_id": SLACK_CLIENT_ID,
-        "scope": "app_mentions:read,chat:write,channels:history,join,groups:read,im:read,mpim:read",
+        "scope": "app_mentions:read,channels:history,channels:join,chat:write,groups:read,im:read,mpim:read,channels:read",
         "user_scope": "chat:write",
         "redirect_uri": SLACK_OAUTH_REDIRECT_URI
     }
