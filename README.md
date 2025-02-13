@@ -66,8 +66,8 @@ Copy the ngrok HTTPS URL (e.g., https://random-string.ngrok.io) and use it for S
 ### 2️⃣ Select the workspace and allow permissions (Admin permission required)
 
 ### 3️⃣ Add app to the channel (using /invite @Droid Assistant) and start chatting.
-
-## Running the App Locally  
+---
+## Demo Video  
 
 https://github.com/user-attachments/assets/13d3bcb2-ad9e-4979-a258-98e20f265830
 
