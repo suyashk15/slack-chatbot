@@ -12,6 +12,7 @@ from typing import List, Dict
 import json
 import requests
 from fastapi.responses import RedirectResponse
+import httpx
 
 load_dotenv()
 
@@ -158,25 +159,32 @@ async def slack_events(request: Request):
 
 # Exchange the code for an access token
 @app.get("/slack/oauth/callback")
-async def oauth_callback(code: str):
-    response = requests.post(
-        "https://slack.com/api/oauth.v2.access",
-        data={
-            "client_id": SLACK_CLIENT_ID,
-            "client_secret": SLACK_CLIENT_SECRET,
-            "code": code,
-            "redirect_uri": SLACK_OAUTH_REDIRECT_URI
-        }
-    )
+async def slack_oauth_callback(code: str):
+    """
+    Handles the OAuth callback from Slack and exchanges the authorization code for an access token.
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://slack.com/api/oauth.v2.access",
+            data={
+                "client_id": SLACK_CLIENT_ID,
+                "client_secret": SLACK_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": SLACK_OAUTH_REDIRECT_URI
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+
     data = response.json()
 
-    if response.status_code != 200 or not data.get("ok"):
-        return {"error": "Failed to complete OAuth process."}
+    if not data.get("ok"):
+        return {"error": "OAuth failed", "details": data}
 
-    # Save the OAuth token for future use
-    access_token = data.get("access_token")
+    access_token = data["access_token"]
+    team_id = data["team"]["id"]
 
-    return RedirectResponse(url="https://slack.com/app_redirect")
+    # You may want to store the access_token in a database for later use
+    return RedirectResponse(url="https://slack.com/app_redirect?team=" + team_id)
 
 if __name__ == "__main__":
     import uvicorn
